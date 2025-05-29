@@ -1,0 +1,16 @@
+apiVersion: kuma.io/v1alpha1
+kind: Uptime
+metadata:
+  name: service-a-uptime
+  namespace: dev
+spec:
+  targetRef:
+    kind: MeshService
+    name: service-a
+  conf:
+    interval: 10s
+    timeout: 2s
+    unhealthyThreshold: 3
+    healthyThreshold: 1
+    http:
+      url: http://service-a.dev.svc.cluster.local:3000/health

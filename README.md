@@ -60,6 +60,38 @@ kubectl port-forward -n kuma-system svc/kuma-control-plane 5681:5681
 ```
 Open http://localhost:5681 in your browser.
 
+## CI/CD Pipeline
+
+A GitHub Actions workflow is provided at `.github/workflows/deploy.yml` to automate building, deploying, and monitoring your services across all environments.
+
+### Usage
+1. Push your code to GitHub.
+2. In the Actions tab, run the `CI/CD Multi-Env Deploy` workflow.
+3. The workflow will:
+   - Build Docker images for both services
+   - Apply Terraform to create namespaces
+   - Install Kuma and label namespaces for sidecar injection
+   - Deploy all manifests for dev, stg, and prod
+   - Apply Kuma Uptime monitoring YAMLs
+   - Verify deployments and monitoring
+
+### Kuma Uptime Monitoring
+Kuma Uptime manifests are already included in each environment folder (`k8s/dev/`, `k8s/stg/`, `k8s/prod/`).
+You can also apply them manually:
+```bash
+kubectl apply -f Tech\ chalenges/k8s/dev/
+kubectl apply -f Tech\ chalenges/k8s/stg/
+kubectl apply -f Tech\ chalenges/k8s/prod/
+```
+
+### Kuma Sidecar Injection
+Namespaces are labeled for Kuma sidecar injection automatically by the workflow. If you need to do it manually:
+```bash
+kubectl label namespace dev kuma.io/sidecar-injection=enabled --overwrite
+kubectl label namespace stg kuma.io/sidecar-injection=enabled --overwrite
+kubectl label namespace prod kuma.io/sidecar-injection=enabled --overwrite
+```
+
 ## Verification
 - Check service endpoints in each namespace:
 ```bash

@@ -1,0 +1,94 @@
+name: CI/CD Multi-Env Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      KUBECONFIG: ${{ github.workspace }}/.kube/config
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set up Minikube
+        uses: medyagh/setup-minikube@v1
+        with:
+          driver: docker
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Build Docker images
+        run: |
+          eval $(minikube -p minikube docker-env)
+          docker build -t service-a:latest ./Tech\ chalenges/service-a
+          docker build -t service-b:latest ./Tech\ chalenges/service-b
+
+      - name: Apply Terraform (namespaces)
+        run: |
+          cd Tech\ chalenges/terraform
+          terraform init
+          terraform apply -auto-approve
+
+      - name: Install Kuma (if not present)
+        run: |
+          kumactl install control-plane | kubectl apply -f -
+          kubectl wait --for=condition=available deployment/kuma-control-plane -n kuma-system --timeout=120s
+
+      - name: Label namespaces for Kuma sidecar injection
+        run: |
+          kubectl label namespace dev kuma.io/sidecar-injection=enabled --overwrite
+          kubectl label namespace stg kuma.io/sidecar-injection=enabled --overwrite
+          kubectl label namespace prod kuma.io/sidecar-injection=enabled --overwrite
+
+      - name: Deploy to dev
+        run: |
+          kubectl apply -f Tech\ chalenges/k8s/dev/
+          kubectl rollout status deployment/service-a -n dev --timeout=60s
+          kubectl rollout status deployment/service-b -n dev --timeout=60s
+
+      - name: Deploy to stg
+        run: |
+          kubectl apply -f Tech\ chalenges/k8s/stg/
+          kubectl rollout status deployment/service-a -n stg --timeout=60s
+          kubectl rollout status deployment/service-b -n stg --timeout=60s
+
+      - name: Deploy to prod
+        run: |
+          kubectl apply -f Tech\ chalenges/k8s/prod/
+          kubectl rollout status deployment/service-a -n prod --timeout=60s
+          kubectl rollout status deployment/service-b -n prod --timeout=60s
+
+      - name: Apply Kuma Uptime manifests (dev)
+        run: |
+          kubectl apply -f Tech\ chalenges/k8s/dev/service-a-uptime.yaml
+          kubectl apply -f Tech\ chalenges/k8s/dev/service-b-uptime.yaml
+
+      - name: Apply Kuma Uptime manifests (stg)
+        run: |
+          kubectl apply -f Tech\ chalenges/k8s/stg/service-a-uptime.yaml
+          kubectl apply -f Tech\ chalenges/k8s/stg/service-b-uptime.yaml
+
+      - name: Apply Kuma Uptime manifests (prod)
+        run: |
+          kubectl apply -f Tech\ chalenges/k8s/prod/service-a-uptime.yaml
+          kubectl apply -f Tech\ chalenges/k8s/prod/service-b-uptime.yaml
+
+      - name: Verify deployments
+        run: |
+          kubectl get pods -n dev
+          kubectl get pods -n stg
+          kubectl get pods -n prod
+          kubectl get uptime -A
